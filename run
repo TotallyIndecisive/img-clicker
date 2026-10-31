@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+cd "$(dirname "$0")"
+
+show_help() {
+  echo "Img Clicker - Full Application"
+  echo "=================================="
+  echo ""
+  echo "Commands:"
+  echo "  start        - Start continuous detection, move cursor and click (once per appearance)"
+  echo "  stop         - Stop running instance"
+  echo "  status       - Check if running"
+  echo "  help         - Show this help"
+  echo ""
+  echo "Keyboard shortcuts (while running):"
+  echo "  Ctrl+C                  - Stop the application cleanly"
+  echo "  Move mouse to top-left corner - PyAutoGUI failsafe (emergency stop)"
+  echo ""
+  echo "Press 'start' to begin, or Ctrl+C to exit this launcher."
+}
+
+PIDFILE="/tmp/img-clicker.pid"
+LOGFILE="/tmp/img-clicker.log"
+
+case "$1" in
+  start)
+    if [ -f "$PIDFILE" ]; then
+      PID=$(cat "$PIDFILE")
+      if ps -p "$PID" > /dev/null 2>&1; then
+        echo "Already running (PID $PID). Use './run stop' to stop it."
+        exit 1
+      else
+        rm -f "$PIDFILE"
+      fi
+    fi
+    echo "Starting img-clicker..."
+    echo "Target: targets/tickets.png"
+    echo "Mode: Detect, move cursor, click once per appearance"
+    echo "Press Ctrl+C or move to top-left corner to stop"
+    nohup uv run python main.py targets/tickets.png --click > "$LOGFILE" 2>&1 &
+    echo $! > "$PIDFILE"
+    echo "Started (PID $(cat $PIDFILE)). Logs: $LOGFILE"
+    ;;
+  stop)
+    if [ -f "$PIDFILE" ]; then
+      PID=$(cat "$PIDFILE")
+      if ps -p "$PID" > /dev/null 2>&1; then
+        kill "$PID" 2>/dev/null
+        sleep 1
+        kill -9 "$PID" 2>/dev/null
+        echo "Stopped (PID $PID)"
+      else
+        echo "Not running"
+      fi
+      rm -f "$PIDFILE"
+    else
+      echo "Not running"
+    fi
+    ;;
+  status)
+    if [ -f "$PIDFILE" ]; then
+      PID=$(cat "$PIDFILE")
+      if ps -p "$PID" > /dev/null 2>&1; then
+        echo "Running (PID $PID)"
+        tail -5 "$LOGFILE" 2>/dev/null
+      else
+        echo "Not running (stale PID)"
+        rm -f "$PIDFILE"
+      fi
+    else
+      echo "Not running"
+    fi
+    ;;
+  help|"")
+    show_help
+    ;;
+  *)
+    show_help
+    exit 1
+    ;;
+esac

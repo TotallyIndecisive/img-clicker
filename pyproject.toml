@@ -1,0 +1,18 @@
+[project]
+name = "img-clicker"
+version = "0.1.0"
+description = "A Linux image detection and clicking demo"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mss>=10.2.0",
+    "numpy>=2.4.6",
+    "opencv-python-headless>=5.0.0.93",
+    "pyautogui>=0.9.54",
+    "typer>=0.27.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
