@@ -17,6 +17,7 @@ SCRIPT = Path(imgc.__file__).resolve()
 
 def invoke(tmp_path, *args):
     env = os.environ.copy()
+    env['IMGC_NO_UPDATE_CHECK'] = '1'
     env['XDG_CONFIG_HOME'] = str(tmp_path / 'config')
     env['XDG_DATA_HOME'] = str(tmp_path / 'data')
     return subprocess.run([sys.executable, str(SCRIPT), *args], env=env, text=True, capture_output=True)
@@ -58,6 +59,8 @@ def test_start_uses_saved_and_per_run_overrides(tmp_path, monkeypatch):
     monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'config'))
     monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path / 'data'))
     imgc.save_resolution((1920, 1080))
+    imgc.set_target_directory(str(tmp_path))
+    monkeypatch.setenv('IMGC_NO_UPDATE_CHECK', '1')
     runner = Mock()
     monkeypatch.setitem(sys.modules, 'main', SimpleNamespace(find_target=Mock(return_value='target.png'), run=runner))
     monkeypatch.setattr(sys, 'argv', ['imgc', 'start', '--dry-run'])

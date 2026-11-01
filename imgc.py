@@ -5,11 +5,88 @@ import os
 import re
 import sys
 import tempfile
+import time
+import tomllib
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 DEFAULT_RESOLUTION = (1160, 650)
+UPDATE_URL = "https://raw.githubusercontent.com/TotallyIndecisive/img-clicker/master/pyproject.toml"
+UPDATE_COMMAND = "uv tool upgrade img-clicker --reinstall-package img-clicker"
+UPDATE_INTERVAL = 24 * 60 * 60
+UPDATE_RETRY_INTERVAL = 60 * 60
+
+
+def update_cache_path():
+    configured = os.environ.get("XDG_CACHE_HOME", "")
+    base = Path(configured) if configured and Path(configured).is_absolute() else Path.home() / ".cache"
+    return base / "img-clicker" / "update.json"
+
+
+def version_tuple(version):
+    """Compare stable dotted numeric releases without adding a dependency."""
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", version):
+        return None
+    parts = [int(part) for part in version.split(".")]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
+def check_for_updates():
+    """Check the published version at most once per day; failures are harmless."""
+    if os.environ.get("IMGC_NO_UPDATE_CHECK") == "1":
+        return
+    path = update_cache_path()
+    now = time.time()
+    cache = {}
+    try:
+        with path.open(encoding="utf-8") as file:
+            cache = json.load(file)
+        if not isinstance(cache, dict):
+            cache = {}
+    except (OSError, ValueError, UnicodeError):
+        pass
+    checked = cache.get("checked_at")
+    interval = UPDATE_RETRY_INTERVAL if cache.get("failed") else UPDATE_INTERVAL
+    fresh = isinstance(checked, (int, float)) and 0 <= now - checked < interval
+    if not fresh:
+        try:
+            request = urllib.request.Request(UPDATE_URL, headers={"User-Agent": "img-clicker-update-check"})
+            with urllib.request.urlopen(request, timeout=0.5) as response:
+                content = response.read(65537)
+            if len(content) > 65536:
+                raise ValueError("Update metadata is too large")
+            latest = tomllib.loads(content.decode("utf-8"))["project"]["version"]
+            if version_tuple(latest) is None:
+                raise ValueError("Invalid version")
+            cache = {"checked_at": now, "latest": latest, "failed": False}
+        except (OSError, ValueError, KeyError, TypeError, UnicodeError, urllib.error.URLError):
+            cache = {"checked_at": now, "latest": cache.get("latest"), "failed": True}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                             prefix=".update-", delete=False) as file:
+                temporary = Path(file.name)
+                try:
+                    json.dump(cache, file)
+                except Exception:
+                    temporary.unlink(missing_ok=True)
+                    raise
+            try:
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+    latest = cache.get("latest")
+    latest_version = version_tuple(latest)
+    current_version = version_tuple(VERSION)
+    if latest_version and current_version and latest_version > current_version:
+        print(f"img-clicker {latest} is available (installed: {VERSION}). Update with:\n  {UPDATE_COMMAND}", file=sys.stderr)
 
 
 def config_path():
@@ -156,6 +233,7 @@ def make_parser():
 
 
 def cli():
+    check_for_updates()
     parser, subparsers = make_parser()
     args = parser.parse_args()
     if args.command is None or args.command == "help":

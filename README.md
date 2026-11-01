@@ -11,9 +11,21 @@ uv tool install git+https://github.com/TotallyIndecisive/img-clicker.git
 uv tool update-shell
 ```
 
-Restart your terminal or follow the `uv tool update-shell` instructions to put uv's executable directory on `PATH`. You can then run `imgc` from any directory. To upgrade later, run `uv tool upgrade img-clicker`; to remove the tool, run `uv tool uninstall img-clicker`.
+Restart your terminal or follow the `uv tool update-shell` instructions to put uv's executable directory on `PATH`. You can then run `imgc` from any directory. To remove the tool, run `uv tool uninstall img-clicker`.
 
 To install from a local checkout instead, run `uv tool install /path/to/img-clicker`. Use `uv tool install --editable /path/to/img-clicker` when developing locally.
+
+### Updates
+
+To update your installed tool from its original installation source, run:
+
+```bash
+uv tool upgrade img-clicker --reinstall-package img-clicker
+```
+
+For an installation from GitHub, this uses the Git source selected during installation. For an installation from a local checkout, it uses that local directory: update the checkout first, then run the command above. Your selected targets folder and capture size are kept in your user configuration.
+
+`imgc` checks the version on GitHub's `master` branch at most once per day and displays a notice and the update command when a newer stable version is available. Checks use a short network timeout; if offline, the command continues and retries later. Set `IMGC_NO_UPDATE_CHECK=1` to disable checks. Update notices require a version that contains this feature; older installed versions need the upgrade command above once after the new code is published. Maintainers must increment the version in `pyproject.toml` and `imgc.py` for each release and publish it to `master`.
 
 ## Getting started
 

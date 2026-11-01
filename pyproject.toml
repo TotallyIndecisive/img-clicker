@@ -1,6 +1,6 @@
 [project]
 name = "img-clicker"
-version = "1.0.0"
+version = "1.0.1"
 description = "A Linux X11 image detection and clicking tool"
 readme = "README.md"
 requires-python = ">=3.11"
