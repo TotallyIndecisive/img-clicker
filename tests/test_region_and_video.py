@@ -21,9 +21,24 @@ def test_region_coordinates():
         centered_region({'left': 0, 'top': 0, 'width': 800, 'height': 600})
 
 
+@pytest.fixture(scope='module', autouse=True)
+def reference_image(tmp_path_factory):
+    global REFERENCE_PATH
+    REFERENCE_PATH = str(tmp_path_factory.mktemp('reference') / 'reference.png')
+    rng = np.random.default_rng(4321)
+    raw = np.zeros((156, 222, 4), dtype=np.uint8)
+    raw[10:146, 10:212, :3] = (40, 80, 190)
+    for _ in range(20):
+        x, y = rng.integers(20, 200), rng.integers(20, 136)
+        cv2.circle(raw, (int(x), int(y)), int(rng.integers(4, 16)),
+                   tuple(int(v) for v in rng.integers(0, 255, 3)) + (255,), -1)
+    raw[10:146, 10:212, 3] = 255
+    cv2.imwrite(REFERENCE_PATH, raw)
+
+
 @pytest.fixture(scope='module')
 def detector():
-    return ScreenDetector('targets/tickets.png')
+    return ScreenDetector(REFERENCE_PATH)
 
 
 def scene(angle, seed, with_target=True):
@@ -33,7 +48,7 @@ def scene(angle, seed, with_target=True):
     for i in range(20):
         x, y = rng.integers(0, 1160), rng.integers(0, 650)
         cv2.circle(image, (int(x), int(y)), int(rng.integers(5, 80)), tuple(int(v) for v in rng.integers(0, 255, 3)), 2)
-    raw = cv2.imread('targets/tickets.png', cv2.IMREAD_UNCHANGED)
+    raw = cv2.imread(REFERENCE_PATH, cv2.IMREAD_UNCHANGED)
     h, w = raw.shape[:2]
     mat = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1)
     nw = int(np.ceil(abs(mat[0, 0]) * w + abs(mat[0, 1]) * h))
@@ -114,7 +129,7 @@ def test_manual_capture_never_moves_or_clicks(tmp_path):
 
 
 def test_target_close_to_region_edges(detector):
-    raw = cv2.imread('targets/tickets.png', cv2.IMREAD_UNCHANGED)
+    raw = cv2.imread(REFERENCE_PATH, cv2.IMREAD_UNCHANGED)
     for x, y in [(0, 0), (1160-raw.shape[1], 650-raw.shape[0])]:
         frame, _ = scene(0, 100, False)
         a = raw[:, :, 3:4].astype(np.float32) / 255

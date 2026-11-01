@@ -10,6 +10,21 @@ import typer
 from controller import MouseController
 from detector import ScreenDetector, in_region
 
+TARGET_DIR = Path(__file__).resolve().parent / 'targets'
+SUPPORTED_IMAGES = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+
+
+def find_target(directory=TARGET_DIR):
+    """Select the single supported image in the targets directory."""
+    directory = Path(directory)
+    if not directory.is_dir():
+        raise ValueError(f'Target folder does not exist: {directory}')
+    images = sorted(p for p in directory.iterdir()
+                    if p.is_file() and p.suffix.lower() in SUPPORTED_IMAGES)
+    if len(images) != 1:
+        raise ValueError(f'Put exactly one PNG, JPEG, WebP or BMP image in {directory} (found {len(images)}).')
+    return images[0]
+
 
 def save_debug(path, screenshot, result):
     """Save a diagnostic screenshot annotated with detection details."""
@@ -27,17 +42,21 @@ def save_debug(path, screenshot, result):
         raise OSError(f'Could not write screenshot: {path}')
 
 
-def run(path: str, click: bool = False, move_only: bool = False, once: bool = False,
+def run(path: str = '', click: bool = False, move_only: bool = False, once: bool = False,
         interval: float = 0.01, threshold: float = 0.55, duration: float = 0.2,
         max_clicks: int = 0, dry_run: bool = False, timeout: float = 0.0,
         region_width: int = 1160, region_height: int = 650, monitor: int = 1,
-        debug: bool = False, debug_save: str = '', capture: str = ''):
+        debug: bool = False, debug_save: str = '', capture: str = '', check: bool = False):
     """Capture and detect targets, then perform the requested mouse action."""
     try:
-        detector = ScreenDetector(path, threshold=threshold, region_width=region_width, region_height=region_height)
+        path = Path(path) if path else find_target()
+        detector = ScreenDetector(str(path), threshold=threshold, region_width=region_width, region_height=region_height)
     except (ValueError, OSError) as e:
         typer.echo(f'Error loading template: {e}', err=True)
         raise typer.Exit(code=1)
+    typer.echo(f'Target: {path} ({detector.template_w}×{detector.template_h} visible area)')
+    if check:
+        return
     controller = MouseController(duration=duration, move_only=move_only, dry_run=dry_run)
     click_count = 0
     target_visible = False
@@ -99,7 +118,7 @@ def run(path: str, click: bool = False, move_only: bool = False, once: bool = Fa
 
 
 def main(
-    path: str = typer.Argument(..., help='Path to reference PNG image'),
+    path: str = typer.Argument('', help='Reference image; defaults to the only image in targets/'),
     click: bool = typer.Option(False, '--click'),
     move_only: bool = typer.Option(False, '--move-only'),
     once: bool = typer.Option(False, '--once'),
@@ -115,10 +134,11 @@ def main(
     debug: bool = typer.Option(False, '--debug'),
     debug_save: str = typer.Option('', '--debug-save', help='Save the first detected frame to this file'),
     capture: str = typer.Option('', '--capture', help='Save one diagnostic frame and exit without clicking'),
+    check: bool = typer.Option(False, '--check', help='Validate the target and exit'),
 ):
     """Parse command-line options and start the detection loop."""
     run(path, click, move_only, once, interval, threshold, duration, max_clicks,
-        dry_run, timeout, region_width, region_height, monitor, debug, debug_save, capture)
+        dry_run, timeout, region_width, region_height, monitor, debug, debug_save, capture, check)
 
 
 if __name__ == '__main__':

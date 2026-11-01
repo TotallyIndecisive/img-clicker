@@ -32,11 +32,14 @@ case "$1" in
         rm -f "$PIDFILE"
       fi
     fi
+    if ! uv run python main.py --check; then
+      echo "Cannot start img-clicker; fix the target image error above." >&2
+      exit 1
+    fi
     echo "Starting img-clicker..."
-    echo "Target: targets/tickets.png"
     echo "Mode: Detect, move cursor, click once per appearance"
     echo "Press Ctrl+C or move to top-left corner to stop"
-    nohup uv run python main.py targets/tickets.png --click > "$LOGFILE" 2>&1 &
+    nohup uv run python main.py --click > "$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
     echo "Started (PID $(cat $PIDFILE)). Logs: $LOGFILE"
     ;;

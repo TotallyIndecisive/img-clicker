@@ -57,8 +57,19 @@ class RotationInvariantDetector:
             raise ValueError(f'Could not load template image: {template_path}')
         if raw.ndim == 2:
             raw = cv2.cvtColor(raw, cv2.COLOR_GRAY2BGR)
-        self.template = raw[:, :, :3]
-        self.alpha = raw[:, :, 3] if raw.shape[2] == 4 else np.full(raw.shape[:2], 255, np.uint8)
+        if raw.dtype == np.uint16:
+            raw = (raw / 257).astype(np.uint8)
+        if raw.dtype != np.uint8 or raw.shape[2] not in (3, 4):
+            raise ValueError('Unsupported image format')
+        original_h, original_w = raw.shape[:2]
+        if max(original_h, original_w) > 600:
+            raise ValueError(f'Target image is {original_w}×{original_h}; maximum size is 600×600 pixels')
+        alpha = raw[:, :, 3] if raw.shape[2] == 4 else np.full(raw.shape[:2], 255, np.uint8)
+        if not np.any(alpha >= 240):
+            raise ValueError('Target image has no sufficiently opaque pixels')
+        x, y, w, h = cv2.boundingRect((alpha > 0).astype(np.uint8))
+        self.template = raw[y:y+h, x:x+w, :3]
+        self.alpha = alpha[y:y+h, x:x+w]
         self.h, self.w = self.template.shape[:2]
         self.template_h, self.template_w = self.h, self.w
         if min(self.h, self.w) < 1 or max(self.h, self.w) > 4096:
@@ -69,12 +80,17 @@ class RotationInvariantDetector:
         self.region_width, self.region_height = region_width, region_height
         self.use_orb, self.use_multiscale = use_orb, use_multiscale
         self.scale = 0.4
+        self.coarse_color = gray[self.alpha > 200].std() < 10
         self.orb = cv2.ORB_create(nfeatures=1500)
         self.kp_t, self.des_t = self.orb.detectAndCompute(gray, self.alpha)
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING)
-        self.rotated_templates = [(angle, *self._rotated(angle, self.scale)) for angle in range(0, 360, 15)]
+        # Small angular differences move large images by many pixels. Search
+        # them more finely so candidates are not lost before verification.
+        self.angle_step = 3 if max(self.h, self.w) >= 500 else 15
+        self.rotated_templates = [(angle, *self._rotated(angle, self.scale, color=self.coarse_color))
+                                  for angle in range(0, 360, self.angle_step)]
 
-    def _rotated(self, angle, scale=1.0):
+    def _rotated(self, angle, scale=1.0, color=False):
         """Rotate and scale the reference image and its transparency mask."""
         h, w = self.h, self.w
         matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, scale)
@@ -85,7 +101,7 @@ class RotationInvariantDetector:
         image = cv2.warpAffine(self.template, matrix, (nw, nh), flags=cv2.INTER_LINEAR)
         alpha = cv2.warpAffine(self.alpha, matrix, (nw, nh), flags=cv2.INTER_LINEAR)
         mask = (alpha >= 240).astype(np.uint8) * 255
-        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), mask
+        return (image if color else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)), mask
 
     def _rotate_image(self, image, angle):
         """Rotate an image while expanding its bounding rectangle."""
@@ -141,7 +157,8 @@ class RotationInvariantDetector:
         """Search coarse rotations and verify promising matches at full resolution."""
         start = time.perf_counter()
         gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
-        small = cv2.resize(gray, None, fx=self.scale, fy=self.scale, interpolation=cv2.INTER_AREA)
+        source = screenshot[:, :, :3] if self.coarse_color and screenshot.ndim == 3 else gray
+        small = cv2.resize(source, None, fx=self.scale, fy=self.scale, interpolation=cv2.INTER_AREA)
         candidates = []
         for angle, template, mask in self.rotated_templates:
             value, loc = self._match(small, template, mask)
@@ -163,7 +180,8 @@ class RotationInvariantDetector:
             if len(selected) >= 4:
                 break
         for cx, cy, angle in selected:
-            for fine_angle in range(angle - 8, angle + 9, 2):
+            radius = 2 if self.angle_step == 3 else 8
+            for fine_angle in range(angle - radius, angle + radius + 1, 2):
                 template, mask = self._rotated(fine_angle % 360)
                 h, w = template.shape
                 x0 = max(0, int(cx - w / 2 - 12)); y0 = max(0, int(cy - h / 2 - 12))
@@ -171,9 +189,31 @@ class RotationInvariantDetector:
                 value, loc = self._match(gray[y0:y1, x0:x1], template, mask)
                 if value > best.confidence:
                     x, y = x0 + loc[0], y0 + loc[1]
-                    best = MatchResult(value >= self.threshold, value, (x + w // 2, y + h // 2),
+                    # The geometric center can be transparent (for example, a ring).
+                    # Click the nearest opaque reference pixel instead.
+                    distance = cv2.distanceTransform(mask, cv2.DIST_L2, 3)
+                    # Stay away from edges so small angle and position errors do
+                    # not turn an opaque reference pixel into a transparent click.
+                    safe_distance = min(8.0, float(distance.max()) * .5)
+                    yy, xx = np.nonzero(distance >= safe_distance)
+                    nearest = np.argmin((xx - w / 2) ** 2 + (yy - h / 2) ** 2)
+                    px, py = int(xx[nearest]), int(yy[nearest])
+                    if screenshot.ndim == 3 and screenshot.shape[2] >= 3:
+                        color_template, _ = self._rotated(fine_angle % 360, color=True)
+                        ya, yb = max(0, py-2), min(h, py+3)
+                        xa, xb = max(0, px-2), min(w, px+3)
+                        patch_mask = mask[ya:yb, xa:xb] > 0
+                        expected = color_template[ya:yb, xa:xb][patch_mask]
+                        actual = screenshot[y+ya:y+yb, x+xa:x+xb, :3][patch_mask]
+                        if np.mean(np.abs(expected.astype(np.float32) - actual.astype(np.float32))) > 45:
+                            continue
+                    best = MatchResult(value >= self.threshold, value, (x + px, y + py),
                                        (x, y, w, h), angle=fine_angle % 360,
                                        method='masked-template', detection_ms=detection_ms)
+                    # A strong verified match does not need the remaining angles.
+                    if best.found and best.confidence >= max(self.threshold, .92):
+                        best.verification_ms = (time.perf_counter() - verify_start) * 1000
+                        return best
         best.verification_ms = (time.perf_counter() - verify_start) * 1000
         return best
 

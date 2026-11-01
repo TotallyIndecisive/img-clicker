@@ -10,14 +10,15 @@ from detector import RotationInvariantDetector
 def test_rotation_invariance_synthetic(tmp_path):
     # Create template
     tpath = tmp_path / "t.png"
-    template = np.random.randint(0, 255, (60, 80, 3), dtype=np.uint8)
+    rng = np.random.default_rng(42)
+    template = cv2.resize(rng.integers(0, 255, (15, 20, 3), dtype=np.uint8), (80, 60), interpolation=cv2.INTER_LINEAR)
     # add strong features
     template[10:30, 10:30] = (0, 255, 0)
     template[40:50, 60:70] = (255, 0, 0)
     cv2.imwrite(str(tpath), template)
     det = RotationInvariantDetector(str(tpath), threshold=0.8)
     # Create scene with rotated target
-    scene = np.random.randint(50, 200, (480, 640, 3), dtype=np.uint8)
+    scene = rng.integers(50, 200, (480, 640, 3), dtype=np.uint8)
     h, w = template.shape[:2]
     center = (w // 2, h // 2)
     M = cv2.getRotationMatrix2D(center, 45, 1.0)
