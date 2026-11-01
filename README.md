@@ -1,61 +1,60 @@
 # img-clicker
 
-img-clicker is a Linux/X11 tool that monitors a centered part of the screen for a reference image. It can report a match, move the pointer, or click the image once per appearance. It supports rotated targets and can be used with the companion img-display demo or other on-screen content.
+img-clicker is a Linux/X11 command-line tool that detects a reference image on screen and can move the pointer and click it. It supports rotated targets and monitors a centered region of the display. Detection accuracy and timing depend on the reference and the screen content.
 
-Detection depends on the reference image and screen conditions. Synthetic tests do not guarantee accuracy or a particular response time on real video.
+## Install on Linux
 
-## Requirements and setup
-
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.11 or newer, and use an X11 desktop session. From the project directory:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use an X11 desktop session. Install img-clicker from GitHub:
 
 ```bash
-uv sync
+uv tool install git+https://github.com/TotallyIndecisive/img-clicker.git
+uv tool update-shell
 ```
 
-Place **exactly one** PNG, JPEG, WebP or BMP image in `targets/`. The original image must be no larger than **600 × 600 pixels**. Image files in this directory are local and are not committed to the repository. For the companion img-display, use the same image in its `images/` folder.
+Restart your terminal or follow the `uv tool update-shell` instructions to put uv's executable directory on `PATH`. You can then run `imgc` from any directory. To upgrade later, run `uv tool upgrade img-clicker`; to remove the tool, run `uv tool uninstall img-clicker`.
 
-Use a reference with visible detail. Transparent margins are trimmed, transparent pixels are excluded from matching, and the click point is chosen within an opaque part of the target. Fully transparent and visually uniform images cannot be matched reliably.
+To install from a local checkout instead, run `uv tool install /path/to/img-clicker`. Use `uv tool install --editable /path/to/img-clicker` when developing locally.
+
+## Add a target
+
+Run:
+
+```bash
+imgc targets
+```
+
+This creates and prints the targets directory, normally:
+
+```text
+~/.local/share/img-clicker/targets/
+```
+
+If `XDG_DATA_HOME` is set to an absolute path, the directory is `$XDG_DATA_HOME/img-clicker/targets/`. Put **exactly one** PNG, JPEG, WebP, or BMP image in that folder. The original image must be no larger than **600 × 600 pixels**. `imgc start` also creates the folder if it does not exist and reports its path when an image is missing. To use an image elsewhere, pass `--image /path/to/image.png` to `imgc start` or `imgc check`.
+
+Choose an image with visible detail. Transparent margins are trimmed, transparent pixels are excluded from matching, and the click point is chosen within an opaque part of the target. Fully transparent or visually uniform images cannot be matched reliably. For the companion img-display, use the same original image in its `images/` folder.
 
 ## Run
 
-First, validate the image and observe detections without moving the pointer:
-
 ```bash
-uv run python main.py --check
-uv run python main.py --dry-run --debug
+imgc help                 # Show commands
+imgc help start           # Show detection and movement options
+imgc check                # Validate the selected image
+imgc start --dry-run      # Report detections without moving or clicking
+imgc start                # Move and click when the target appears
 ```
 
-To move the pointer and click once per appearance, stop the dry run with Ctrl+C and start:
+`imgc start` runs in the foreground. Stop it with **Ctrl+C**; moving the pointer to the top-left corner triggers the PyAutoGUI failsafe. A target is acted on once per appearance and must be missed for two consecutive scans before the next action. `--move-only` moves without clicking, and `--dry-run` disables both movement and clicking.
 
 ```bash
-uv run python main.py --click
+imgc start --debug                    # Include coordinates and timing
+imgc start --move-only                # Move without clicking
+imgc start --image /path/to/image.png # Use a specific reference
+imgc start --once                     # Stop after the first detection
 ```
 
-Add `--debug` to show capture, detection, verification, movement and click timing:
+The detection line reports the click count before the action for that detection, so the first line may show `clicks=0` even when clicking is enabled.
 
-```bash
-uv run python main.py --click --debug
-```
-
-**Running `uv run python main.py` on its own only reports detections.** Use `--click` to move and click. Use `--move-only` to move without clicking; `--dry-run` disables both movement and clicking even if another action is selected.
-
-The detection line reports the click count before the action for that detection, so the first line can show `clicks=0` even when clicking is enabled. A target must be missed for two consecutive scans before the application will act on its next appearance.
-
-Stop a foreground process with Ctrl+C. Moving the mouse to the top-left corner activates the PyAutoGUI failsafe.
-
-### Background launcher
-
-```bash
-./run start    # Validate the target, then detect and click in the background
-./run status   # Show status and recent log output
-./run stop     # Stop the background process
-```
-
-The launcher writes output to `/tmp/img-clicker.log`. For a target outside `targets/`, pass its path directly, for example:
-
-```bash
-uv run python main.py /path/to/image.png --click
-```
+The previous source checkout commands remain available: `uv run python main.py --click` runs in the foreground, and `./run start`, `./run status`, and `./run stop` manage its background launcher. These legacy commands use the checkout's `targets/` folder, while `imgc` uses the user data folder described above.
 
 ## Detection and options
 
@@ -63,35 +62,27 @@ By default, MSS captures a centered **1160 × 650** region of monitor 1. On a 19
 
 The detector searches rotated versions of the image and refines promising matches. Larger references use finer rotation steps; low-contrast grayscale references can use color during the initial search. The image must retain its original scale and its rotated visible rectangle must fit in the capture region. The companion img-display selects rotations that fit its region.
 
-Useful options include `--threshold` (default `0.55`), `--duration` (default `0.2` seconds), `--interval`, `--timeout`, `--max-clicks`, and `--once`. See all options with:
-
-```bash
-uv run python main.py --help
-```
+Useful options include `--threshold` (default `0.55`), `--duration` (default `0.2` seconds), `--interval`, `--timeout`, and `--max-clicks`. See all options with `imgc start --help`.
 
 ## Diagnostics
 
-`--debug` prints the region, match confidence, coordinates, method and timing for each scan. To save the first detected frame with annotations:
+`--debug` prints the region, match confidence, coordinates, method and timing for each scan. Save the first detected frame with annotations:
 
 ```bash
-uv run python main.py --dry-run --debug-save detection.png
+imgc start --dry-run --debug-save detection.png
 ```
 
-To save a single diagnostic frame when the target is visible, run the following in a separate terminal. This mode exits without moving or clicking:
+Save one diagnostic frame when the target is visible. This exits without moving or clicking:
 
 ```bash
-uv run python main.py --capture diagnostic.png
+imgc start --capture diagnostic.png
 ```
 
 Screenshots are saved only when requested. Review them before sharing, as they contain screen content.
 
-## Tests
+## Development
 
-```bash
-uv run python -m pytest -q
-```
-
-The tests cover image selection and size limits, rotation matching, capture coordinates, transparent targets and mouse controls. Mouse actions are mocked. The test suite requires access to an X display for PyAutoGUI; on a headless machine, it can be run with `xvfb-run -a uv run python -m pytest -q`.
+From a checkout, run `uv sync` to install project and development dependencies. Run the test suite with `uv run python -m pytest -q`. The tests cover image selection and size limits, rotation matching, capture coordinates, transparent targets and mouse controls. Mouse actions are mocked. PyAutoGUI requires an X display; on a headless machine use `xvfb-run -a uv run python -m pytest -q`.
 
 ## License
 
