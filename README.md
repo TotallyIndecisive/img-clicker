@@ -39,6 +39,8 @@ Choose an image with visible detail. Transparent margins are trimmed, transparen
 imgc help                 # Show commands
 imgc help start           # Show detection and movement options
 imgc check                # Validate the selected image
+imgc show                 # Show the saved capture size
+imgc set res 1920x1080   # Save a centered capture size
 imgc start --dry-run      # Report detections without moving or clicking
 imgc start                # Move and click when the target appears
 ```
@@ -58,7 +60,7 @@ The previous source checkout commands remain available: `uv run python main.py -
 
 ## Detection and options
 
-By default, MSS captures a centered **1160 × 650** region of monitor 1. On a 1920 × 1080 display, its top-left corner is `(380, 215)`. Detected points are converted to desktop coordinates and checked against the region before an action. Use `--region-width`, `--region-height`, and `--monitor` to change the capture area or display.
+By default, MSS captures a centered **1160 × 650** region of monitor 1. On a 1920 × 1080 display, its top-left corner is `(380, 215)`. Detected points are converted to desktop coordinates and checked against the region before an action. Set a persistent centered capture size with `imgc set res WIDTHxHEIGHT`, for example `imgc set res 1920x1080`. Inspect it with `imgc show`. The setting is saved across runs in `~/.config/img-clicker/config.json` (or `$XDG_CONFIG_HOME/img-clicker/config.json` if set to an absolute path). It must fit the selected monitor; the application checks this when capturing. Use `--region-width` and `--region-height` to override either saved dimension for one run, and `--monitor` to select a display. The legacy `main.py` and `./run` commands retain their separate default and options.
 
 The detector searches rotated versions of the image and refines promising matches. Larger references use finer rotation steps; low-contrast grayscale references can use color during the initial search. The image must retain its original scale and its rotated visible rectangle must fit in the capture region. The companion img-display selects rotations that fit its region.
 
