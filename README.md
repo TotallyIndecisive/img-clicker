@@ -15,32 +15,52 @@ Restart your terminal or follow the `uv tool update-shell` instructions to put u
 
 To install from a local checkout instead, run `uv tool install /path/to/img-clicker`. Use `uv tool install --editable /path/to/img-clicker` when developing locally.
 
-## Add a target
+## Getting started
 
-Run:
+### 1. Choose a location for targets
+
+After installing and restarting your terminal, choose an existing directory where img-clicker should create a `targets` folder:
 
 ```bash
-imgc targets
+imgc set ~/Pictures
 ```
 
-This creates and prints the targets directory, normally:
+This creates and selects `~/Pictures/targets`. To create and select `targets` in your current directory instead, run:
 
-```text
-~/.local/share/img-clicker/targets/
+```bash
+imgc set
 ```
 
-If `XDG_DATA_HOME` is set to an absolute path, the directory is `$XDG_DATA_HOME/img-clicker/targets/`. Put **exactly one** PNG, JPEG, WebP, or BMP image in that folder. The original image must be no larger than **600 × 600 pixels**. `imgc start` also creates the folder if it does not exist and reports its path when an image is missing. To use an image elsewhere, pass `--image /path/to/image.png` to `imgc start` or `imgc check`.
+You can also pass an existing folder named `targets` directly. Quote paths containing spaces, for example `imgc set "$HOME/My Images"`. The parent directory must already exist. Run `imgc targets` to print the active folder, or `imgc show` to see it alongside your saved capture size.
 
-Choose an image with visible detail. Transparent margins are trimmed, transparent pixels are excluded from matching, and the click point is chosen within an opaque part of the target. Fully transparent or visually uniform images cannot be matched reliably. For the companion img-display, use the same original image in its `images/` folder.
+To change the location later, run `imgc set /path/to/existing/directory` again. The new folder becomes the only active location. The old folder and its images are left untouched; copy the image you want into the new folder. Existing users of the earlier default `~/.local/share/img-clicker/targets` can select it with `imgc set ~/.local/share/img-clicker/targets`.
 
-## Run
+### 2. Add and check an image
+
+Put **exactly one** PNG, JPEG, WebP, or BMP image in the active `targets` folder. The original image must be no larger than **600 × 600 pixels**. Choose an image with visible detail; fully transparent or visually uniform images cannot be matched reliably. For the companion img-display, use the same original image in its `images/` folder.
+
+```bash
+imgc check
+```
+
+Transparent margins are trimmed, transparent pixels are excluded from matching, and the click point is chosen within an opaque part of the target. After choosing a location, you can also use `--image /path/to/image.png` with `imgc start` or `imgc check` to select an image for that run.
+
+### 3. Choose the capture size
+
+The default centered capture region is 1160 × 650 pixels. To save another size, run for example:
+
+```bash
+imgc set res 1920x1080
+imgc show
+```
+
+The region must fit the selected display. See **Detection and options** below for per-run overrides.
+
+### 4. Start detecting and clicking
 
 ```bash
 imgc help                 # Show commands
 imgc help start           # Show detection and movement options
-imgc check                # Validate the selected image
-imgc show                 # Show the saved capture size
-imgc set res 1920x1080   # Save a centered capture size
 imgc start --dry-run      # Report detections without moving or clicking
 imgc start                # Move and click when the target appears
 ```
@@ -56,7 +76,7 @@ imgc start --once                     # Stop after the first detection
 
 The detection line reports the click count before the action for that detection, so the first line may show `clicks=0` even when clicking is enabled.
 
-The previous source checkout commands remain available: `uv run python main.py --click` runs in the foreground, and `./run start`, `./run status`, and `./run stop` manage its background launcher. These legacy commands use the checkout's `targets/` folder, while `imgc` uses the user data folder described above.
+The previous source checkout commands remain available: `uv run python main.py --click` runs in the foreground, and `./run start`, `./run status`, and `./run stop` manage its background launcher. These legacy commands use the checkout's `targets/` folder; `imgc` uses the location selected during setup.
 
 ## Detection and options
 

@@ -50,10 +50,8 @@ def get_resolution(config):
     return tuple(value)
 
 
-def save_resolution(resolution):
+def write_config(config):
     path = config_path()
-    config = read_config()
-    config["resolution"] = list(resolution)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
@@ -68,6 +66,12 @@ def save_resolution(resolution):
             temporary.unlink(missing_ok=True)
 
 
+def save_resolution(resolution):
+    config = read_config()
+    config["resolution"] = list(resolution)
+    write_config(config)
+
+
 def positive_int(value):
     try:
         number = int(value)
@@ -78,16 +82,34 @@ def positive_int(value):
     return number
 
 
-def target_directory():
-    """Return the XDG user data directory for reference images."""
-    configured = os.environ.get("XDG_DATA_HOME", "")
-    base = Path(configured) if configured and Path(configured).is_absolute() else Path.home() / ".local" / "share"
-    return base / "img-clicker" / "targets"
+def target_directory(config):
+    """Return the configured folder, or explain how to set it up."""
+    location = config.get("targets")
+    if location is None:
+        raise ValueError("First choose a target location, silly! Run 'imgc set' here or 'imgc set /path/to/folder'.")
+    if not isinstance(location, str) or not location or not Path(location).is_absolute():
+        raise ValueError(f"Invalid target location in {config_path()}; choose one with 'imgc set /path/to/folder'.")
+    directory = Path(location)
+    if not directory.is_dir():
+        raise ValueError(f"Target folder is missing or is not a directory: {directory}. Restore it or run 'imgc set /path/to/folder'.")
+    return directory
 
 
-def prepare_targets():
-    directory = target_directory()
-    directory.mkdir(parents=True, exist_ok=True)
+def set_target_directory(location):
+    """Create a targets folder in an existing parent and select it."""
+    config = read_config()
+    parent = Path(location).expanduser().resolve() if location is not None else Path.cwd().resolve()
+    if not parent.is_dir():
+        raise ValueError(f"That location isn't a directory: {parent}. Pick an existing folder, silly!")
+    directory = parent if location is not None and parent.name == "targets" else parent / "targets"
+    directory.mkdir(exist_ok=True)
+    if not directory.is_dir():
+        raise ValueError(f"Cannot use {directory} as a targets folder.")
+    old = config.get("targets")
+    config["targets"] = str(directory)
+    write_config(config)
+    if old and old != str(directory):
+        print(f"Previous target folder left untouched: {old}")
     return directory
 
 
@@ -95,20 +117,23 @@ def make_parser():
     parser = argparse.ArgumentParser(
         prog="imgc",
         description="Detect and click a reference image on an X11 desktop.",
-        epilog="Set a persistent centered capture size: imgc set res 1920x1080. "
+        epilog="First choose a targets location: imgc set [DIRECTORY]. "
+               "Set a persistent centered capture size: imgc set res 1920x1080. "
                "Run 'imgc help start' for options. Stop a running session with Ctrl+C.",
     )
     parser.add_argument("--version", action="version", version=f"img-clicker {VERSION}")
     commands = parser.add_subparsers(dest="command", metavar="COMMAND")
     commands.add_parser("help", help="Show commands or help for a command").add_argument(
         "topic", nargs="?", choices=("start", "targets", "check", "set", "show"))
-    commands.add_parser("targets", help="Create and print the user targets directory")
-    show = commands.add_parser("show", help="Show the saved centered capture size")
-    setting = commands.add_parser("set", help="Save a centered capture size, e.g. imgc set res 1920x1080")
-    settings = setting.add_subparsers(dest="setting", required=True, metavar="SETTING")
-    resolution = settings.add_parser("res", help="Set capture size as WIDTHxHEIGHT")
-    resolution.add_argument("size", type=parse_resolution, metavar="WIDTHxHEIGHT",
-                            help="Centered capture size in pixels, e.g. 1920x1080")
+    commands.add_parser("targets", help="Print the active targets directory")
+    show = commands.add_parser("show", help="Show the active targets folder and capture size")
+    setting = commands.add_parser("set", help="Choose a targets location or save capture size",
+                                  description="Choose where to create targets/ using imgc set [DIRECTORY]. "
+                                              "Save a centered capture size with imgc set res WIDTHxHEIGHT.")
+    setting.add_argument("location_or_res", nargs="?", metavar="DIRECTORY|res",
+                         help="Existing parent directory (default: current directory), or res")
+    setting.add_argument("size", nargs="?", metavar="WIDTHxHEIGHT",
+                         help="Centered capture size, used with res")
     check = commands.add_parser("check", help="Validate the selected reference image")
     check.add_argument("--image", type=Path, help="Use a specific reference image")
     start = commands.add_parser("start", help="Detect and click targets in the foreground")
@@ -137,24 +162,39 @@ def cli():
         if args.command == "help" and args.topic in subparsers:
             subparsers[args.topic].print_help()
         elif args.command == "help" and args.topic == "targets":
-            print("usage: imgc targets\n\nCreate and print the user targets directory.")
+            print("usage: imgc targets\n\nPrint the active targets directory. First choose it with 'imgc set [DIRECTORY]'.")
         else:
             parser.print_help()
         return 0
     try:
         if args.command == "set":
-            save_resolution(args.size)
-            print(f"Saved centered capture size: {args.size[0]}x{args.size[1]} ({config_path()})")
+            if args.location_or_res == "res":
+                if args.size is None:
+                    raise ValueError("Give me a size, silly! Use 'imgc set res WIDTHxHEIGHT', e.g. 1920x1080.")
+                try:
+                    resolution = parse_resolution(args.size)
+                except argparse.ArgumentTypeError as exc:
+                    raise ValueError(str(exc)) from exc
+                save_resolution(resolution)
+                print(f"Saved centered capture size: {resolution[0]}x{resolution[1]} ({config_path()})")
+            elif args.size is not None:
+                raise ValueError("Use 'imgc set [DIRECTORY]' or 'imgc set res WIDTHxHEIGHT'.")
+            else:
+                directory = set_target_directory(args.location_or_res)
+                print(f"Active target folder: {directory}\nPut exactly one image there, then run 'imgc start'.")
             return 0
         if args.command == "show":
-            width, height = get_resolution(read_config())
+            config = read_config()
+            width, height = get_resolution(config)
             print(f"Centered capture size: {width}x{height} (config: {config_path()})")
+            print(f"Target folder: {config.get('targets', 'not set — run imgc set [DIRECTORY]')}")
             return 0
+        config = read_config()
+        directory = target_directory(config)
         if args.command == "start":
-            width, height = get_resolution(read_config())
+            width, height = get_resolution(config)
             width = args.region_width if args.region_width is not None else width
             height = args.region_height if args.region_height is not None else height
-        directory = prepare_targets()
         if args.command == "targets":
             print(directory)
             return 0
